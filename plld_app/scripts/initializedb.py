@@ -33,8 +33,6 @@ def main(args):
         )
     DBSession.add(dataset)
 
-    # All ValueSets must be related to a contribution:
-    contrib = common.Contribution(id='contrib', name='the contribution')
 
     # Load the list of languages
     languages = pandas.ExcelFile(os.path.join(DBPATH, "Languages and Coordinates.xlsx")).parse(0)
@@ -52,49 +50,64 @@ def main(args):
             longitude=language['Lon'])
 
         # Check what data files we have that say they are about that language.
-        try:
-            files_concerning = [file for file in os.listdir(DBPATH)
-                                if file.lower().startswith(language['ISO'].lower())]
-        except AttributeError:
+        if pandas.isnull(language['ISO']):
+            # The convention for file-names of varieties without iso
+            # code is ad-hoc, skip those until we have established a
+            # good convention.
             continue
+        else:
+            # Otherwise, the convention is that languages are
+            # described by files starting with their iso code and an
+            # underscore.
+            files_concerning = [file for file in os.listdir(DBPATH)
+                                if file.lower().startswith(
+                                        language['ISO'].lower()+'_')]
 
+
+        # For each such language, we might have typological, sociolinguistic and lexical (small vocabulary or big vocabulary or kinship terms) data. Deal with them in order.
+        
+        # Try to load the corresponding typology questionnaire
         typology_files = [file for file in files_concerning
                           if 'typolog' in file.lower()]
-
-        # Try to load the corresponding typology questionnaire
-        if len(typology_files) != 1:
-            continue
-        questionnaire = typology_files[0]
-        try:
-            contribution_text, parameter_descriptions, answers = parse_questionnaire(
-                os.path.join(DBPATH, questionnaire))
-            for p, parameter in parameter_descriptions.iterrows():
-                question = parameter['q_text']
-                answer = str(answers["a_text"][question])
-                #print('•', question, "=", answer.encode('ascii', 'ignore').decode('ascii'))
-                try:
-                    param = parameters[question.lower()]
-                except KeyError:
-                    param = common.Parameter(
-                        id='param{:s}'.format(newid()),
-                        name=question)
-                    parameters[question.lower()] = param
-
-                # ValueSets group Values related to the same Language, Contribution and 
-                # Parameter
-                vs = common.ValueSet(id='vs'+newid(),
-                                     language=lang,
-                                     parameter=param,
-                                     contribution=contrib)
-
-                # Values store the actual "measurements":
-                DBSession.add(common.Value(id='v'+newid(), name=answer, valueset=vs))
-                DBSession.flush()
+        if len(typology_files) == 1:
+            try:
+                add_typological_data(typology_files[0], parameters, lang)
+            except UnexpectedTypologyFormatError:
+                print("File", typology_files[0], "had an unexpected format for a typology questionnaire!")
+        else:
+            print("There were not one, but", len(typology_files), "possible questionnaires.")
                 
+
             
-            print("Typology database for", language.name, "successfully loaded.")
-        except UnexpectedTypologyFormatError:
-            print("File", questionnaire, "had an unexpected format for a typology questionnaire!")
+def add_typological_data(questionnaire_file_name, parameters, language):
+    """ Parse the typological questionnaire into the database """
+    contribution_text, parameter_descriptions, answers = parse_questionnaire(
+        os.path.join(DBPATH, questionnaire_file_name))
+
+    # All ValueSets must be related to a contribution, so generate one from the metadata.
+    contrib = common.Contribution(id='contrib'+newid(), name=contribution_text+newid())
+
+    for p, parameter in parameter_descriptions.iterrows():
+        question = parameter['q_text'].lower()
+        try:
+            param = parameters[question]
+        except KeyError:
+            param = common.Parameter(
+                id='param{:s}'.format(newid()),
+                name=parameter['q_text'])
+            parameters[question] = param
+
+        answer = str(answers["a_text"][question])
+        # ValueSets group Values related to the same Language, Contribution and 
+        # Parameter
+        vs = common.ValueSet(id='vs'+newid(),
+                             language=language,
+                             parameter=param,
+                             contribution=contrib)
+
+        # Values store the actual "measurements":
+        DBSession.add(common.Value(id='v'+newid(), name=answer, valueset=vs))
+        DBSession.flush()
 
 def prime_cache(args):
     """If data needs to be denormalized for lookup, do that here.

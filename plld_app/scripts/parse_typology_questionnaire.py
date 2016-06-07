@@ -41,7 +41,7 @@ def parse_questionnaire(filename):
         else:
             features = features.append(row[["q_id: Reesink", "q_text", "q_note: Nijmegen Topological Survey"]])
             answer = row[["a_text", "a_notes", "a_reference"]]
-            answer.name = row["q_text"]
+            answer.name = row["q_text"].lower()
             answers = answers.append(answer)
             assert(len(features) == len(answers))
     return metadata, features, answers
