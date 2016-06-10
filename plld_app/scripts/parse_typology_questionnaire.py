@@ -9,7 +9,7 @@ class UnexpectedTypologyFormatError (ValueError):
     """Exception to be thrown when a questionnaire is misformatted"""
     pass
 
-def parse_questionnaire(filename):
+def parse_typology_questionnaire(filename):
     questionnaire = pandas.ExcelFile(filename)
 
     metadata_sheet_name = 'Metadata'
